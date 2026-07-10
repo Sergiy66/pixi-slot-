@@ -244,6 +244,7 @@ export class SlotController {
   private async initializeSymbols() {
     const totalSymbolsToLoad = SLOT_CONFIG.symbols.length;
     let loadedSymbols = 0;
+    let usedFallbackAssets = false;
 
     const updateLoadingState = (statusMessage: string, progressFloor = 0.12) => {
       this.statusMessage = statusMessage;
@@ -284,11 +285,21 @@ export class SlotController {
         loadedSymbols += 1;
         updateLoadingState(`Loading ${symbolDefinition.label}...`);
       } catch (error) {
-        this.statusMessage = `Failed on ${symbolDefinition.label}. Keeping preview only.`;
-        this.loadingProgress = 1;
-        console.error(`Failed to load Spine symbol: ${symbolDefinition.id}`, error);
-        this.emitState();
-        return;
+        const fallbackAsset = this.createFallbackSymbolAsset(symbolDefinition, previewDefinition);
+
+        if (!fallbackAsset) {
+          this.statusMessage = `Failed on ${symbolDefinition.label}.`;
+          this.loadingProgress = 1;
+          console.error(`Failed to load Spine symbol: ${symbolDefinition.id}`, error);
+          this.emitState();
+          return;
+        }
+
+        this.assets.symbols[symbolDefinition.id] = fallbackAsset;
+        loadedSymbols += 1;
+        usedFallbackAssets = true;
+        console.error(`Failed to load Spine symbol: ${symbolDefinition.id}. Using fallback asset instead.`, error);
+        updateLoadingState(`Preparing ${symbolDefinition.label} fallback...`);
       }
     }
 
@@ -297,8 +308,28 @@ export class SlotController {
     this.view.setIdleAnimationsEnabled(true);
     this.isReady = true;
     this.loadingProgress = 1;
-    this.statusMessage = 'All Spine symbols loaded.';
+    this.statusMessage = usedFallbackAssets ? 'Game loaded with fallback assets.' : 'All Spine symbols loaded.';
     this.emitState();
+  }
+
+  private createFallbackSymbolAsset(
+    symbolDefinition: SymbolDefinition,
+    previewDefinition: SymbolDefinition,
+  ): SpineSymbolAsset | null {
+    const previewAsset = this.assets.symbols[previewDefinition.id];
+
+    if (!previewAsset) {
+      return null;
+    }
+
+    return {
+      skeletonAssetAlias: previewAsset.skeletonAssetAlias,
+      atlasAssetAlias: previewAsset.atlasAssetAlias,
+      animations: previewAsset.animations,
+      fitScale: symbolDefinition.fitScale,
+      offsetX: symbolDefinition.offsetX,
+      offsetY: symbolDefinition.offsetY,
+    };
   }
 
   private async loadSpineSymbolAsset(symbol: SymbolDefinition): Promise<SpineSymbolAsset> {
