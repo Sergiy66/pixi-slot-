@@ -153,7 +153,7 @@ export class LayoutManager {
   }
 
   private static getResponsiveUiSafeHeight(viewportWidth: number) {
-    if (viewportWidth <= 480) {
+    if (viewportWidth <= SLOT_CONFIG.ui.mobileBreakpoint) {
       return SLOT_CONFIG.ui.mobileReservedHeight;
     }
 

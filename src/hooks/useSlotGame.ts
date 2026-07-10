@@ -1,17 +1,19 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Application } from 'pixi.js';
 import { createPixiApp } from '../app/createPixiApp';
+import { SLOT_CONFIG } from '../config/slotConfig';
 import { SlotController } from '../controllers/SlotController';
 import type { SlotUiState } from '../types/slot';
 
 const initialState: SlotUiState = {
-  balance: 1000,
-  bet: 10,
+  balance: SLOT_CONFIG.initialBalance,
+  bet: SLOT_CONFIG.bet,
   totalWin: 0,
   isSpinning: false,
   isReady: false,
   loadingProgress: 0,
-  statusMessage: 'Loading preview symbol...',
+  loadingError: null,
+  statusMessage: SLOT_CONFIG.loading.initialStatusMessage,
   layout: null,
 };
 
@@ -35,6 +37,7 @@ export function useSlotGame(isGameStarted = true) {
   const controllerRef = useRef<SlotController | null>(null);
   const layoutFrameRef = useRef<number | null>(null);
   const [uiState, setUiState] = useState<SlotUiState>(initialState);
+  const [initializationAttempt, setInitializationAttempt] = useState(0);
 
   const scheduleLayoutUpdate = () => {
     if (layoutFrameRef.current !== null) {
@@ -66,28 +69,61 @@ export function useSlotGame(isGameStarted = true) {
     }
 
     let isDisposed = false;
+    let isControllerInitializing = false;
     let app: Application | null = null;
     let controller: SlotController | null = null;
 
     void (async () => {
-      app = await createPixiApp(host);
+      try {
+        app = await createPixiApp(host);
 
-      if (isDisposed) {
-        app.destroy(true);
-        return;
+        if (isDisposed) {
+          app.destroy(true);
+          return;
+        }
+
+        isControllerInitializing = true;
+
+        try {
+          controller = await SlotController.create(app, (nextState) => {
+            if (!isDisposed) {
+              setUiState(nextState);
+            }
+          });
+        } finally {
+          isControllerInitializing = false;
+        }
+
+        if (isDisposed) {
+          controller.destroy();
+          app.destroy(true);
+          return;
+        }
+
+        controllerRef.current = controller;
+        setUiState(controller.getUiState());
+        scheduleLayoutUpdate();
+      } catch (error) {
+        if (isDisposed) {
+          app?.destroy(true);
+          app = null;
+          return;
+        }
+
+        console.error('Game initialization failed', error);
+        app?.destroy(true);
+        app = null;
+        setUiState((currentState) => ({
+          ...currentState,
+          isReady: false,
+          loadingProgress: Math.min(
+            currentState.loadingProgress,
+            SLOT_CONFIG.loading.maxProgressBeforeReady,
+          ),
+          loadingError: error instanceof Error ? error.message : 'Game initialization failed.',
+          statusMessage: 'Game initialization failed.',
+        }));
       }
-
-      controller = await SlotController.create(app, setUiState);
-
-      if (isDisposed) {
-        controller.destroy();
-        app.destroy(true);
-        return;
-      }
-
-      controllerRef.current = controller;
-      setUiState(controller.getUiState());
-      scheduleLayoutUpdate();
     })();
 
     return () => {
@@ -100,9 +136,13 @@ export function useSlotGame(isGameStarted = true) {
       }
 
       controller?.destroy();
-      app?.destroy(true);
+
+      if (!isControllerInitializing) {
+        app?.destroy(true);
+        app = null;
+      }
     };
-  }, []);
+  }, [initializationAttempt]);
 
   useEffect(() => {
     const root = rootRef.current;
@@ -181,6 +221,11 @@ export function useSlotGame(isGameStarted = true) {
     controllerRef.current?.increaseBet();
   };
 
+  const retryInitialization = () => {
+    setUiState(initialState);
+    setInitializationAttempt((attempt) => attempt + 1);
+  };
+
   return {
     rootRef,
     canvasRef,
@@ -189,6 +234,7 @@ export function useSlotGame(isGameStarted = true) {
     activateAudio,
     decreaseBet,
     increaseBet,
+    retryInitialization,
     uiState,
   };
 }

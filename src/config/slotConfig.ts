@@ -1,14 +1,19 @@
 import backgroundUrl from '../assets/background.png';
 import slotGridUrl from '../assets/slot-grid.png';
-import cockatooAtlasUrl from '../assets/Cockatoo_export/Cockatoo.atlas?url';
+import cockatooAtlasUrl from '../assets/Cockatoo_export/Cockatoo.atlas?url&no-inline';
+import cockatooImageUrl from '../assets/Cockatoo_export/Cockatoo.png';
 import cockatooSkeletonUrl from '../assets/Cockatoo_export/Cockatoo.json?url';
-import emuAtlasUrl from '../assets/Emu_export/Emu.atlas?url';
+import emuAtlasUrl from '../assets/Emu_export/Emu.atlas?url&no-inline';
+import emuImageUrl from '../assets/Emu_export/Emu.png';
 import emuSkeletonUrl from '../assets/Emu_export/Emu.json?url';
-import platypusAtlasUrl from '../assets/Platypus_export/Platypus.atlas?url';
+import platypusAtlasUrl from '../assets/Platypus_export/Platypus.atlas?url&no-inline';
+import platypusImageUrl from '../assets/Platypus_export/Platypus.png';
 import platypusSkeletonUrl from '../assets/Platypus_export/Platypus.json?url';
-import seaTurtleAtlasUrl from '../assets/Sea turtle_export/Sea Turtle.atlas?url';
+import seaTurtleAtlasUrl from '../assets/Sea turtle_export/Sea Turtle.atlas?url&no-inline';
+import seaTurtleImageUrl from '../assets/Sea turtle_export/Sea Turtle.png';
 import seaTurtleSkeletonUrl from '../assets/Sea turtle_export/Sea Turtle.json?url';
-import wombatAtlasUrl from '../assets/Wombat_export/Wombat.atlas?url';
+import wombatAtlasUrl from '../assets/Wombat_export/Wombat.atlas?url&no-inline';
+import wombatImageUrl from '../assets/Wombat_export/Wombat.png';
 import wombatSkeletonUrl from '../assets/Wombat_export/Wombat.json?url';
 import type { GridFrame, Payline, SymbolDefinition, SymbolKey } from '../types/slot';
 
@@ -20,6 +25,8 @@ const symbols: readonly SymbolDefinition[] = [
     skeletonAssetSrc: emuSkeletonUrl,
     atlasAssetAlias: 'symbols/emu/atlas',
     atlasAssetSrc: emuAtlasUrl,
+    atlasImageName: 'Emu.png',
+    atlasImageSrc: emuImageUrl,
     fitScale: 1.04,
   },
   {
@@ -29,6 +36,8 @@ const symbols: readonly SymbolDefinition[] = [
     skeletonAssetSrc: seaTurtleSkeletonUrl,
     atlasAssetAlias: 'symbols/seaTurtle/atlas',
     atlasAssetSrc: seaTurtleAtlasUrl,
+    atlasImageName: 'Sea Turtle.png',
+    atlasImageSrc: seaTurtleImageUrl,
     fitScale: 1.01,
   },
   {
@@ -38,6 +47,8 @@ const symbols: readonly SymbolDefinition[] = [
     skeletonAssetSrc: cockatooSkeletonUrl,
     atlasAssetAlias: 'symbols/cockatoo/atlas',
     atlasAssetSrc: cockatooAtlasUrl,
+    atlasImageName: 'Cockatoo.png',
+    atlasImageSrc: cockatooImageUrl,
     fitScale: 1.18,
     offsetY: 0.08,
   },
@@ -48,6 +59,8 @@ const symbols: readonly SymbolDefinition[] = [
     skeletonAssetSrc: platypusSkeletonUrl,
     atlasAssetAlias: 'symbols/platypus/atlas',
     atlasAssetSrc: platypusAtlasUrl,
+    atlasImageName: 'Platypus.png',
+    atlasImageSrc: platypusImageUrl,
     fitScale: 1.04,
   },
   {
@@ -57,6 +70,8 @@ const symbols: readonly SymbolDefinition[] = [
     skeletonAssetSrc: wombatSkeletonUrl,
     atlasAssetAlias: 'symbols/wombat/atlas',
     atlasAssetSrc: wombatAtlasUrl,
+    atlasImageName: 'Wombat.png',
+    atlasImageSrc: wombatImageUrl,
     fitScale: 1.03,
   },
 ] as const;
@@ -221,6 +236,7 @@ export const SLOT_CONFIG = {
   designHeight: 1080,
   reels: 5,
   rows: 3,
+  initialBalance: 1000,
   bet: 10,
   betOptions: [10, 20, 50, 100, 200, 500],
   backgroundUrl,
@@ -231,13 +247,13 @@ export const SLOT_CONFIG = {
   paylines,
   paytable,
   spin: {
-    speed: 1380,
     baseDuration: 1.05,
     reelDelay: 0.18,
     cycles: 8,
     stopDuration: 0.42,
   },
   ui: {
+    mobileBreakpoint: 480,
     compactBreakpoint: 768,
     minReservedHeight: 136,
     tabletReservedHeight: 152,
@@ -263,6 +279,12 @@ export const SLOT_CONFIG = {
   },
   slotLayout: {
     symbolFillRatio: 0.86,
+  },
+  loading: {
+    initialStatusMessage: 'Loading preview symbol...',
+    initialProgress: 0.12,
+    previewProgress: 0.28,
+    maxProgressBeforeReady: 0.98,
   },
   lineDisplaySeconds: 2.8,
 } as const;

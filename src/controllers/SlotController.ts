@@ -8,6 +8,7 @@ import type { SlotAssets, SlotUiState, SpineAnimationSet, SpineSymbolAsset, Symb
 import { SlotView } from '../views/SlotView';
 
 type StateListener = (state: SlotUiState) => void;
+let areSymbolAssetsRegistered = false;
 
 export class SlotController {
   static async create(app: Application, onStateChange: StateListener): Promise<SlotController> {
@@ -20,9 +21,14 @@ export class SlotController {
     };
 
     const controller = new SlotController(app, assets, onStateChange);
-    await controller.initializeSymbols();
 
-    return controller;
+    try {
+      await controller.initializeSymbols();
+      return controller;
+    } catch (error) {
+      controller.destroy();
+      throw error;
+    }
   }
 
   private readonly model = new SlotModel();
@@ -35,7 +41,7 @@ export class SlotController {
 
   private isSpinning = false;
   private isReady = false;
-  private balance = 1000;
+  private balance: number = SLOT_CONFIG.initialBalance;
   private bet: number = SLOT_CONFIG.bet;
   private displayedWin = 0;
   private pendingResolve?: () => void;
@@ -43,8 +49,8 @@ export class SlotController {
   private readonly app: Application;
   private readonly assets: SlotAssets;
   private readonly onStateChange: StateListener;
-  private statusMessage = 'Loading preview symbol...';
-  private loadingProgress = 0.12;
+  private statusMessage: string = SLOT_CONFIG.loading.initialStatusMessage;
+  private loadingProgress: number = SLOT_CONFIG.loading.initialProgress;
   private lastViewportWidth = 0;
   private lastViewportHeight = 0;
   private lastUiReservedHeight = 0;
@@ -89,6 +95,7 @@ export class SlotController {
       isSpinning: this.isSpinning,
       isReady: this.isReady,
       loadingProgress: this.loadingProgress,
+      loadingError: null,
       statusMessage: this.statusMessage,
       layout: this.view.getLayout(),
     };
@@ -246,16 +253,39 @@ export class SlotController {
     let loadedSymbols = 0;
     let usedFallbackAssets = false;
 
-    const updateLoadingState = (statusMessage: string, progressFloor = 0.12) => {
+    const updateLoadingState = (
+      statusMessage: string,
+      progressFloor: number = SLOT_CONFIG.loading.initialProgress,
+    ) => {
       this.statusMessage = statusMessage;
-      this.loadingProgress = Math.max(progressFloor, 0.12 + (loadedSymbols / totalSymbolsToLoad) * 0.88);
+      const loadedRatio = loadedSymbols / totalSymbolsToLoad;
+      const calculatedProgress =
+        SLOT_CONFIG.loading.initialProgress +
+        loadedRatio * (SLOT_CONFIG.loading.maxProgressBeforeReady - SLOT_CONFIG.loading.initialProgress);
+
+      this.loadingProgress = Math.min(
+        Math.max(progressFloor, calculatedProgress),
+        SLOT_CONFIG.loading.maxProgressBeforeReady,
+      );
       this.emitState();
     };
 
-    SLOT_CONFIG.symbols.forEach((symbol) => {
-      Assets.add({ alias: symbol.skeletonAssetAlias, src: symbol.skeletonAssetSrc });
-      Assets.add({ alias: symbol.atlasAssetAlias, src: symbol.atlasAssetSrc });
-    });
+    if (!areSymbolAssetsRegistered) {
+      SLOT_CONFIG.symbols.forEach((symbol) => {
+        Assets.add({ alias: symbol.skeletonAssetAlias, src: symbol.skeletonAssetSrc });
+        Assets.add({
+          alias: symbol.atlasAssetAlias,
+          src: symbol.atlasAssetSrc,
+          data: {
+            images: {
+              [symbol.atlasImageName]: symbol.atlasImageSrc,
+            },
+          },
+        });
+      });
+
+      areSymbolAssetsRegistered = true;
+    }
 
     const previewDefinition =
       SLOT_CONFIG.symbols.find((symbol) => symbol.id === SLOT_CONFIG.previewSymbolId) ?? SLOT_CONFIG.symbols[0];
@@ -265,13 +295,9 @@ export class SlotController {
       this.assets.symbols[previewDefinition.id] = previewAsset;
       loadedSymbols += 1;
       this.view.showPreviewSymbol(previewDefinition.id);
-      updateLoadingState('Preview ready. Loading remaining symbols...', 0.28);
+      updateLoadingState('Preview ready. Loading remaining symbols...', SLOT_CONFIG.loading.previewProgress);
     } catch (error) {
-      this.statusMessage = 'Preview symbol failed to load.';
-      this.loadingProgress = 1;
-      console.error('Failed to load preview Spine symbol', error);
-      this.emitState();
-      return;
+      throw new Error('Preview Spine symbol failed to load.', { cause: error });
     }
 
     for (const symbolDefinition of SLOT_CONFIG.symbols) {
@@ -288,11 +314,7 @@ export class SlotController {
         const fallbackAsset = this.createFallbackSymbolAsset(symbolDefinition, previewDefinition);
 
         if (!fallbackAsset) {
-          this.statusMessage = `Failed on ${symbolDefinition.label}.`;
-          this.loadingProgress = 1;
-          console.error(`Failed to load Spine symbol: ${symbolDefinition.id}`, error);
-          this.emitState();
-          return;
+          throw new Error(`Spine symbol failed to load: ${symbolDefinition.label}.`, { cause: error });
         }
 
         this.assets.symbols[symbolDefinition.id] = fallbackAsset;

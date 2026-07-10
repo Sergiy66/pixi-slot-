@@ -4,10 +4,12 @@ import logoUrl from '../assets/Logo.png';
 interface LoadingScreenProps {
   progress: number;
   isReady: boolean;
+  errorMessage: string | null;
   onStart: () => void;
+  onRetry: () => void;
 }
 
-export function LoadingScreen({ progress, isReady, onStart }: LoadingScreenProps) {
+export function LoadingScreen({ progress, isReady, errorMessage, onStart, onRetry }: LoadingScreenProps) {
   const progressPercent = Math.max(0, Math.min(progress, 1)) * 100;
 
   return (
@@ -18,7 +20,11 @@ export function LoadingScreen({ progress, isReady, onStart }: LoadingScreenProps
       <div className="loading-screen__panel">
         <img className="loading-screen__logo" src={logoUrl} alt="" />
         <div className="loading-screen__action">
-          {isReady ? (
+          {errorMessage ? (
+            <button className="loading-screen__start" type="button" onClick={onRetry}>
+              Retry
+            </button>
+          ) : isReady ? (
             <button className="loading-screen__start" type="button" onClick={onStart}>
               Start
             </button>

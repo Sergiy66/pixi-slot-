@@ -9,6 +9,8 @@ export interface SymbolDefinition {
   skeletonAssetSrc: string;
   atlasAssetAlias: string;
   atlasAssetSrc: string;
+  atlasImageName: string;
+  atlasImageSrc: string;
   fitScale: number;
   offsetX?: number;
   offsetY?: number;
@@ -134,6 +136,7 @@ export interface SlotUiState {
   isSpinning: boolean;
   isReady: boolean;
   loadingProgress: number;
+  loadingError: string | null;
   statusMessage: string;
   layout: SlotLayoutMetrics | null;
 }

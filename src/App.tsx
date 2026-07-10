@@ -6,7 +6,17 @@ import { useSlotGame } from './hooks/useSlotGame';
 
 export default function App() {
   const [isGameStarted, setIsGameStarted] = useState(false);
-  const { rootRef, canvasRef, uiRef, spin, activateAudio, decreaseBet, increaseBet, uiState } = useSlotGame(isGameStarted);
+  const {
+    rootRef,
+    canvasRef,
+    uiRef,
+    spin,
+    activateAudio,
+    decreaseBet,
+    increaseBet,
+    retryInitialization,
+    uiState,
+  } = useSlotGame(isGameStarted);
 
   const startGame = () => {
     activateAudio();
@@ -33,7 +43,13 @@ export default function App() {
       )}
 
       {(!uiState.isReady || !isGameStarted) && (
-        <LoadingScreen progress={uiState.loadingProgress} isReady={uiState.isReady} onStart={startGame} />
+        <LoadingScreen
+          progress={uiState.loadingProgress}
+          isReady={uiState.isReady}
+          errorMessage={uiState.loadingError}
+          onStart={startGame}
+          onRetry={retryInitialization}
+        />
       )}
     </main>
   );
