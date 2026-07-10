@@ -34,9 +34,11 @@ select {
 }
 
 .game-root {
+  isolation: isolate;
   position: relative;
   width: 100vw;
   height: 100vh;
+  height: 100dvh;
   overflow: hidden;
   background: #000;
 }
@@ -48,6 +50,10 @@ select {
   height: 100%;
 }
 
+.game-canvas[data-visible='false'] {
+  visibility: hidden;
+}
+
 .pixi-stage {
   position: absolute;
   inset: 0;
@@ -57,13 +63,14 @@ select {
 }
 
 .loading-screen {
-  position: absolute;
+  position: fixed;
   inset: 0;
-  z-index: 20;
+  z-index: 30;
   display: flex;
   align-items: stretch;
   justify-content: center;
   padding: clamp(24px, 4vw, 56px);
+  background-color: #05070a;
   background-position: center;
   background-repeat: no-repeat;
   background-size: cover;

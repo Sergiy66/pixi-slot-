@@ -15,19 +15,22 @@ export default function App() {
 
   return (
     <main ref={rootRef} className="game-root">
-      <GameCanvas canvasRef={canvasRef} />
-      <GameUI
-        panelRef={uiRef}
-        balance={uiState.balance}
-        bet={uiState.bet}
-        totalWin={uiState.totalWin}
-        isSpinning={uiState.isSpinning}
-        isReady={uiState.isReady}
-        layout={uiState.layout}
-        onSpin={spin}
-        onDecreaseBet={decreaseBet}
-        onIncreaseBet={increaseBet}
-      />
+      <GameCanvas canvasRef={canvasRef} isVisible={isGameStarted} />
+
+      {isGameStarted && (
+        <GameUI
+          panelRef={uiRef}
+          balance={uiState.balance}
+          bet={uiState.bet}
+          totalWin={uiState.totalWin}
+          isSpinning={uiState.isSpinning}
+          isReady={uiState.isReady}
+          layout={uiState.layout}
+          onSpin={spin}
+          onDecreaseBet={decreaseBet}
+          onIncreaseBet={increaseBet}
+        />
+      )}
 
       {(!uiState.isReady || !isGameStarted) && (
         <LoadingScreen progress={uiState.loadingProgress} isReady={uiState.isReady} onStart={startGame} />

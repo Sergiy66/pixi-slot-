@@ -106,18 +106,22 @@ export function useSlotGame(isGameStarted = true) {
 
   useEffect(() => {
     const root = rootRef.current;
-    const ui = uiRef.current;
 
-    if (!root || !ui) {
+    if (!root) {
       return;
     }
 
+    const ui = uiRef.current;
     const observer = new ResizeObserver(() => {
       scheduleLayoutUpdate();
     });
 
     observer.observe(root);
-    observer.observe(ui);
+
+    if (ui) {
+      observer.observe(ui);
+    }
+
     window.addEventListener('resize', scheduleLayoutUpdate, { passive: true });
     scheduleLayoutUpdate();
 
@@ -130,7 +134,7 @@ export function useSlotGame(isGameStarted = true) {
         layoutFrameRef.current = null;
       }
     };
-  }, []);
+  }, [isGameStarted]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
