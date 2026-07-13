@@ -125,6 +125,7 @@ export interface SpinResult {
 
 export interface SlotAssets {
   background: Texture;
+  logo: Texture;
   slotGrid: Texture;
   symbols: Partial<Record<SymbolKey, SpineSymbolAsset>>;
 }

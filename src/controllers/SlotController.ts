@@ -12,10 +12,14 @@ let areSymbolAssetsRegistered = false;
 
 export class SlotController {
   static async create(app: Application, onStateChange: StateListener): Promise<SlotController> {
-    const background = await Assets.load<Texture>(SLOT_CONFIG.backgroundUrl);
-    const slotGrid = await Assets.load<Texture>(SLOT_CONFIG.slotGridUrl);
+    const [background, logo, slotGrid] = await Promise.all([
+      Assets.load<Texture>(SLOT_CONFIG.backgroundUrl),
+      Assets.load<Texture>(SLOT_CONFIG.logoUrl),
+      Assets.load<Texture>(SLOT_CONFIG.slotGridUrl),
+    ]);
     const assets: SlotAssets = {
       background,
+      logo,
       slotGrid,
       symbols: {},
     };
@@ -40,6 +44,7 @@ export class SlotController {
   };
 
   private isSpinning = false;
+  private isFinishingSpin = false;
   private isReady = false;
   private balance: number = SLOT_CONFIG.initialBalance;
   private bet: number = SLOT_CONFIG.bet;
@@ -179,27 +184,41 @@ export class SlotController {
     this.onStateChange(this.getUiState());
   }
 
-  private finishSpin() {
+  private async finishSpin() {
+    this.isFinishingSpin = true;
     const result = this.model.getLastResult();
+    const totalWin = result?.totalWin ?? 0;
 
-    this.isSpinning = false;
-    this.displayedWin = result?.totalWin ?? 0;
+    this.displayedWin = totalWin;
     this.balance += this.displayedWin;
     this.sounds.stopSpin();
     this.clearIdleAnimationTimer();
-    this.idleAnimationTimer = setTimeout(() => {
-      this.view.setIdleAnimationsEnabled(true);
-      this.idleAnimationTimer = null;
-    }, 120);
 
     if (result) {
       this.view.showWinningLines(result.winningLines);
     }
 
-    if ((result?.totalWin ?? 0) > 0) {
+    if (totalWin > 0) {
       this.sounds.playWin();
     }
 
+    this.emitState();
+
+    if (result && result.winningLines.length > 0) {
+      await this.wait(SLOT_CONFIG.lineDisplaySeconds * 1000);
+      const cascadeGrid = this.model.cascadeWinningLines(result.winningLines);
+
+      this.sounds.startSpin();
+      await this.view.playCascade(result.winningLines, cascadeGrid);
+      this.sounds.stopSpin();
+    }
+
+    this.isSpinning = false;
+    this.isFinishingSpin = false;
+    this.idleAnimationTimer = setTimeout(() => {
+      this.view.setIdleAnimationsEnabled(true);
+      this.idleAnimationTimer = null;
+    }, 120);
     this.emitState();
     this.pendingResolve?.();
     this.pendingResolve = undefined;
@@ -236,9 +255,15 @@ export class SlotController {
   private update(deltaSeconds: number) {
     this.view.update(deltaSeconds);
 
-    if (this.isSpinning && !this.view.isSpinAnimating()) {
-      this.finishSpin();
+    if (this.isSpinning && !this.isFinishingSpin && !this.view.isSpinAnimating()) {
+      void this.finishSpin();
     }
+  }
+
+  private wait(milliseconds: number) {
+    return new Promise<void>((resolve) => {
+      setTimeout(resolve, milliseconds);
+    });
   }
 
   private static extractAnimations(animationNames: string[]): SpineAnimationSet {

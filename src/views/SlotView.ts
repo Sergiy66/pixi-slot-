@@ -1,5 +1,5 @@
 import { gsap } from 'gsap';
-import { Container, Graphics, type PointData, type Renderer } from 'pixi.js';
+import { Container, Graphics, Sprite, type PointData, type Renderer } from 'pixi.js';
 import { SLOT_CONFIG } from '../config/slotConfig';
 import type { SlotAssets, SlotGrid, SlotLayoutMetrics, SpineSymbolAsset, SymbolKey, WinningLine } from '../types/slot';
 import { pickRandomSymbol } from '../utils/random';
@@ -14,11 +14,13 @@ export class SlotView {
   private readonly backgroundLayer = new Container();
   private readonly contentRoot = new Container();
   private readonly gridLayer = new Container();
+  private readonly logoLayer = new Container();
   private readonly symbolsLayer = new Container();
   private readonly winLayer = new Container();
   private readonly backgroundView: BackgroundView;
   private readonly slotGridView: SlotGridView;
   private readonly lineOverlay = new Graphics();
+  private readonly logo: Sprite;
   private readonly reels: ReelView[] = [];
   private readonly assets: SlotAssets;
   private readonly renderer: Renderer;
@@ -36,11 +38,16 @@ export class SlotView {
     this.layout = initialLayout;
     this.backgroundView = new BackgroundView(this.assets.background);
     this.slotGridView = new SlotGridView(this.assets.slotGrid);
+    this.logo = new Sprite({ texture: this.assets.logo, anchor: 0.5 });
+    this.logo.roundPixels = true;
+    this.contentRoot.sortableChildren = true;
+    this.logoLayer.zIndex = 10;
 
     this.backgroundLayer.addChild(this.backgroundView.root);
+    this.logoLayer.addChild(this.logo);
     this.gridLayer.addChild(this.slotGridView.root);
     this.winLayer.addChild(this.lineOverlay);
-    this.contentRoot.addChild(this.gridLayer, this.symbolsLayer, this.winLayer);
+    this.contentRoot.addChild(this.logoLayer, this.gridLayer, this.symbolsLayer, this.winLayer);
     this.root.addChild(this.backgroundLayer, this.contentRoot);
 
     this.applyStaticLayout();
@@ -50,6 +57,7 @@ export class SlotView {
   resize(layout: SlotLayoutMetrics) {
     this.layout = layout;
     this.backgroundView.resize(layout.backgroundRect);
+    this.layoutLogo();
     this.contentRoot.position.set(layout.rootOffset.x, layout.rootOffset.y);
     this.contentRoot.scale.set(layout.rootScale);
   }
@@ -152,6 +160,28 @@ export class SlotView {
     });
   }
 
+  async playCascade(winningLines: readonly WinningLine[], grid: SlotGrid) {
+    const rowsByColumn = new Map<number, number[]>();
+
+    winningLines.forEach((line) => {
+      line.cells.forEach(([column, row]) => {
+        const rows = rowsByColumn.get(column) ?? [];
+
+        if (!rows.includes(row)) {
+          rows.push(row);
+        }
+
+        rowsByColumn.set(column, rows);
+      });
+    });
+
+    this.clearWinPresentation();
+    await Promise.all(
+      this.reels.map((reel, index) => reel.cascadeRows(rowsByColumn.get(index) ?? [], grid[index])),
+    );
+    this.setGrid(grid);
+  }
+
   update(deltaSeconds: number) {
     this.previewSymbolView?.update(deltaSeconds);
     this.reels.forEach((reel) => reel.update(deltaSeconds));
@@ -168,9 +198,25 @@ export class SlotView {
   }
 
   private applyStaticLayout() {
+    this.layoutLogo();
     this.slotGridView.resize(this.layout.gridDesignRect);
     this.layoutPreviewSymbol();
     this.layoutReels();
+  }
+
+  private layoutLogo() {
+    const maxWidth = this.layout.gridDesignRect.width * 1.48;
+    const maxHeight = this.layout.gridDesignRect.y * 3.1;
+    const scale = Math.min(
+      maxWidth / this.logo.texture.width,
+      maxHeight / this.logo.texture.height,
+    );
+
+    this.logo.scale.set(scale);
+    this.logo.position.set(
+      this.layout.gridDesignRect.x + this.layout.gridDesignRect.width / 2,
+      this.layout.gridDesignRect.y / 2,
+    );
   }
 
   private createReels() {

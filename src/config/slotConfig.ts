@@ -1,4 +1,5 @@
 import backgroundUrl from '../assets/background.png';
+import logoUrl from '../assets/Logo.png';
 import slotGridUrl from '../assets/slot-grid.png';
 import cockatooAtlasUrl from '../assets/Cockatoo_export/Cockatoo.atlas?url&no-inline';
 import cockatooImageUrl from '../assets/Cockatoo_export/Cockatoo.png';
@@ -240,6 +241,7 @@ export const SLOT_CONFIG = {
   bet: 10,
   betOptions: [10, 20, 50, 100, 200, 500],
   backgroundUrl,
+  logoUrl,
   slotGridUrl,
   symbols,
   previewSymbolId: 'emu' as const,
@@ -251,6 +253,14 @@ export const SLOT_CONFIG = {
     reelDelay: 0.18,
     cycles: 8,
     stopDuration: 0.42,
+  },
+  cascade: {
+    vanishDuration: 0.18,
+    vanishStagger: 0.035,
+    dropDuration: 0.42,
+    fallDuration: 0.36,
+    scaleIn: 0.92,
+    scaleDuration: 0.28,
   },
   ui: {
     mobileBreakpoint: 480,

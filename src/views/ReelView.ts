@@ -4,7 +4,7 @@ import { SLOT_CONFIG } from '../config/slotConfig';
 import type { ReelColumn, SlotLayoutMetrics, SpineSymbolAsset, SymbolKey } from '../types/slot';
 import { SymbolView } from './SymbolView';
 
-type ReelState = 'idle' | 'spinning';
+type ReelState = 'idle' | 'spinning' | 'cascading';
 const REEL_BUFFER_SYMBOLS = 2;
 const STOP_BUFFER_STEPS = 1;
 const EDGE_ROW_OFFSET_RATIO = 0.025;
@@ -133,6 +133,96 @@ export class ReelView extends Container {
         ease: 'sine.out',
         onUpdate: this.applySpinOffset,
       });
+  }
+
+  cascadeRows(rowsToRemove: readonly number[], nextColumn: ReelColumn): Promise<void> {
+    const uniqueRowsToRemove = [...new Set(rowsToRemove)].sort((left, right) => left - right);
+
+    if (uniqueRowsToRemove.length === 0) {
+      this.applyFinalSymbols(nextColumn);
+      return Promise.resolve();
+    }
+
+    this.killAnimations();
+    this.state = 'cascading';
+    this.clearHighlights();
+    this.setIdleAnimationsEnabled(false);
+
+    const removedRows = new Set(uniqueRowsToRemove);
+    const orderedSymbols = this.getOrderedSymbols();
+    const visibleSymbols = Array.from({ length: SLOT_CONFIG.rows }, (_, row) => orderedSymbols[row + 1]);
+    const removedSymbols = uniqueRowsToRemove
+      .map((row) => visibleSymbols[row])
+      .filter((symbol): symbol is SymbolView => Boolean(symbol));
+    const fallingSymbols = visibleSymbols
+      .map((symbol, row) => ({ symbol, row }))
+      .filter((item): item is { symbol: SymbolView; row: number } => Boolean(item.symbol) && !removedRows.has(item.row))
+      .map(({ symbol, row }) => ({
+        symbol,
+        finalRow: row + uniqueRowsToRemove.filter((removedRow) => removedRow > row).length,
+      }));
+
+    const timeline = gsap.timeline();
+    this.spinTimeline = timeline;
+
+    timeline.to(removedSymbols, {
+      alpha: 0,
+      duration: SLOT_CONFIG.cascade.vanishDuration,
+      ease: 'sine.in',
+      stagger: SLOT_CONFIG.cascade.vanishStagger,
+    });
+
+    timeline.call(() => {
+      removedSymbols.forEach((symbol, index) => {
+        const finalRow = index;
+
+        symbol.setSymbol(nextColumn[finalRow]);
+        symbol.alpha = 0;
+        symbol.scale.set(SLOT_CONFIG.cascade.scaleIn);
+        symbol.y = this.getSymbolSlotY(finalRow + 1 - uniqueRowsToRemove.length);
+      });
+    });
+
+    timeline.to(
+      fallingSymbols.map(({ symbol }) => symbol),
+      {
+        y: (index) => this.getSymbolSlotY(fallingSymbols[index].finalRow + 1),
+        duration: SLOT_CONFIG.cascade.fallDuration,
+        ease: 'sine.out',
+      },
+      'drop',
+    );
+
+    timeline.to(
+      removedSymbols,
+      {
+        y: (index) => this.getSymbolSlotY(index + 1),
+        alpha: 1,
+        duration: SLOT_CONFIG.cascade.dropDuration,
+        ease: 'sine.out',
+      },
+      'drop',
+    );
+
+    timeline.to(
+      removedSymbols.map((symbol) => symbol.scale),
+      {
+        x: 1,
+        y: 1,
+        duration: SLOT_CONFIG.cascade.scaleDuration,
+        ease: 'sine.out',
+      },
+      'drop',
+    );
+
+    return new Promise((resolve) => {
+      timeline.eventCallback('onComplete', () => {
+        this.applyFinalSymbols(nextColumn);
+        this.spinTimeline = null;
+        this.state = 'idle';
+        resolve();
+      });
+    });
   }
 
   update(deltaSeconds: number) {

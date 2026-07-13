@@ -1,5 +1,5 @@
 import { SLOT_CONFIG } from '../config/slotConfig';
-import type { SpinResult, SymbolKey, SlotGrid } from '../types/slot';
+import type { SpinResult, SymbolKey, SlotGrid, WinningLine } from '../types/slot';
 import { createRandomGrid } from '../utils/random';
 
 export class SlotModel {
@@ -60,5 +60,43 @@ export class SlotModel {
     this.lastResult = result;
 
     return result;
+  }
+
+  cascadeWinningLines(winningLines: readonly WinningLine[]): SlotGrid {
+    if (winningLines.length === 0) {
+      return this.getGrid();
+    }
+
+    const symbolKeys = SLOT_CONFIG.symbols.map((symbol) => symbol.id);
+    const removedRowsByColumn = new Map<number, Set<number>>();
+
+    winningLines.forEach((line) => {
+      line.cells.forEach(([column, row]) => {
+        const removedRows = removedRowsByColumn.get(column) ?? new Set<number>();
+        removedRows.add(row);
+        removedRowsByColumn.set(column, removedRows);
+      });
+    });
+
+    const nextGrid = this.grid.map((column, columnIndex) => {
+      const removedRows = removedRowsByColumn.get(columnIndex);
+
+      if (!removedRows || removedRows.size === 0) {
+        return [...column];
+      }
+
+      const remainingSymbols = column.filter((_, rowIndex) => !removedRows.has(rowIndex));
+      const newSymbols = Array.from({ length: removedRows.size }, () => {
+        const randomIndex = Math.floor(Math.random() * symbolKeys.length);
+
+        return symbolKeys[randomIndex];
+      });
+
+      return [...newSymbols, ...remainingSymbols];
+    });
+
+    this.grid = nextGrid;
+
+    return this.getGrid();
   }
 }
