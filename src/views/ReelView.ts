@@ -2,14 +2,20 @@ import { gsap } from 'gsap';
 import { Container, Graphics, type Renderer } from 'pixi.js';
 import { SLOT_CONFIG } from '../config/slotConfig';
 import type { ReelColumn, SlotLayoutMetrics, SpineSymbolAsset, SymbolKey } from '../types/slot';
+import { FrameTaskQueue } from '../utils/FrameTaskQueue';
 import { SymbolView } from './SymbolView';
 
 type ReelState = 'idle' | 'spinning' | 'cascading';
 const REEL_BUFFER_SYMBOLS = 2;
 const STOP_BUFFER_STEPS = 1;
 const EDGE_ROW_OFFSET_RATIO = 0.025;
+const STEP_EPSILON_RATIO = 0.000001;
 
 export class ReelView extends Container {
+  private static readonly spinePreloadQueue = new FrameTaskQueue(
+    SLOT_CONFIG.symbolRendering.spinePreloadsPerFrame,
+  );
+
   private readonly maskShape: Graphics;
   private readonly symbolsLayer = new Container();
   private readonly symbols: SymbolView[] = [];
@@ -27,6 +33,7 @@ export class ReelView extends Container {
   private readonly reelIndex: number;
   private metrics: SlotLayoutMetrics;
   private spinTimeline: gsap.core.Timeline | null = null;
+  private pendingSpinePreloads: Array<() => void> = [];
 
   constructor(
     renderer: Renderer,
@@ -55,6 +62,10 @@ export class ReelView extends Container {
         this.metrics.symbolFillRatio,
       );
 
+      if (index === 0 || index > SLOT_CONFIG.rows) {
+        symbol.setSpinning(true);
+      }
+
       symbol.setSymbol(this.randomSymbol());
       symbol.preloadSpinTextures(this.symbolKeys);
       this.symbols.push(symbol);
@@ -70,6 +81,7 @@ export class ReelView extends Container {
   }
 
   override destroy(options?: Parameters<Container['destroy']>[0]) {
+    this.clearPendingSpinePreloads();
     this.killAnimations();
     super.destroy(options);
   }
@@ -109,6 +121,7 @@ export class ReelView extends Container {
     const spinDuration = Math.max(duration - SLOT_CONFIG.spin.stopDuration, 0.2);
     this.spinProxy.offset = 0;
     this.lastAnimatedOffset = 0;
+    this.scheduleFinalSpinePreloads(column, spinSteps + stopSteps);
 
     this.spinTimeline = gsap.timeline({
       defaults: { ease: 'none' },
@@ -256,8 +269,17 @@ export class ReelView extends Container {
 
     orderedSymbols.forEach((symbol, index) => {
       symbol.y = this.getSymbolSlotY(index);
-      symbol.setSymbol(column[this.getColumnIndexForSymbolSlot(index)]);
-      symbol.setSpinning(false);
+      const symbolKey = column[this.getColumnIndexForSymbolSlot(index)];
+
+      if (index > 0 && index <= SLOT_CONFIG.rows) {
+        symbol.preloadLiveSymbol(symbolKey);
+        symbol.setSymbol(symbolKey);
+        symbol.setSpinning(false);
+        return;
+      }
+
+      symbol.setSpinning(true);
+      symbol.setSymbol(symbolKey);
     });
 
     this.offset = 0;
@@ -273,8 +295,28 @@ export class ReelView extends Container {
       this.moveBy(remainingDistance);
     }
 
-    this.applyFinalSymbols(this.finalSymbols);
+    this.settleSpinSymbols();
     this.state = 'idle';
+  }
+
+  private settleSpinSymbols() {
+    const orderedSymbols = this.getOrderedSymbols();
+
+    orderedSymbols.forEach((symbol, index) => {
+      symbol.y = this.getSymbolSlotY(index);
+
+      if (index === 0 || index > SLOT_CONFIG.rows) {
+        symbol.setSymbol(this.finalSymbols[this.getColumnIndexForSymbolSlot(index)]);
+        return;
+      }
+
+      symbol.setSpinning(false);
+    });
+
+    this.offset = 0;
+    this.lastAnimatedOffset = 0;
+    this.spinProxy.offset = 0;
+    this.symbolsLayer.y = 0;
   }
 
   private getOrderedSymbols() {
@@ -294,9 +336,10 @@ export class ReelView extends Container {
     this.symbolsLayer.y = this.offset;
 
     const step = this.metrics.cellHeight;
+    const stepEpsilon = step * STEP_EPSILON_RATIO;
 
-    while (this.offset >= step) {
-      this.offset -= step;
+    while (this.offset >= step - stepEpsilon) {
+      this.offset = Math.max(this.offset - step, 0);
       this.symbolsLayer.y = this.offset;
       this.recycleBottomSymbol();
     }
@@ -310,7 +353,15 @@ export class ReelView extends Container {
       return;
     }
 
-    bottomSymbol.setSymbol(this.stopSymbolQueue.shift() ?? this.randomSymbol());
+    const stopSymbol = this.stopSymbolQueue.shift();
+    const nextSymbol = stopSymbol ?? this.randomSymbol();
+
+    bottomSymbol.setSymbol(nextSymbol);
+
+    if (stopSymbol) {
+      bottomSymbol.preloadLiveSymbol(stopSymbol);
+    }
+
     orderedSymbols.unshift(bottomSymbol);
 
     orderedSymbols.forEach((symbol, index) => {
@@ -339,6 +390,35 @@ export class ReelView extends Container {
       ...column.slice(0, SLOT_CONFIG.rows).reverse(),
       this.randomSymbol(),
     ];
+  }
+
+  private scheduleFinalSpinePreloads(column: ReelColumn, totalSteps: number) {
+    this.clearPendingSpinePreloads();
+    const orderedSymbols = this.getOrderedSymbols();
+    const rotation = totalSteps % orderedSymbols.length;
+    const finalOrder = rotation === 0
+      ? orderedSymbols
+      : [
+          ...orderedSymbols.slice(-rotation),
+          ...orderedSymbols.slice(0, -rotation),
+        ];
+
+    column.slice(0, SLOT_CONFIG.rows).forEach((symbolKey, row) => {
+      const symbol = finalOrder[row + 1];
+
+      if (!symbol) {
+        return;
+      }
+
+      this.pendingSpinePreloads.push(
+        ReelView.spinePreloadQueue.enqueue(() => symbol.preloadLiveSymbol(symbolKey)),
+      );
+    });
+  }
+
+  private clearPendingSpinePreloads() {
+    this.pendingSpinePreloads.forEach((cancel) => cancel());
+    this.pendingSpinePreloads = [];
   }
 
   private applySpinOffset = () => {

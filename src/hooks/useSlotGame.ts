@@ -15,6 +15,14 @@ const initialState: SlotUiState = {
   loadingError: null,
   statusMessage: SLOT_CONFIG.loading.initialStatusMessage,
   layout: null,
+  gameMode: 'base',
+  bonusSpinsRemaining: 0,
+  bonusTotalWin: 0,
+  isBaseAutoSpin: false,
+  isBonusAutoSpin: false,
+  isBigWinVisible: false,
+  bigWinAmount: 0,
+  bonusBuyCost: SLOT_CONFIG.bonus.buyCost,
 };
 
 function isEditableTarget(target: EventTarget | null) {
@@ -221,6 +229,18 @@ export function useSlotGame(isGameStarted = true) {
     controllerRef.current?.increaseBet();
   };
 
+  const buyBonus = async () => {
+    await controllerRef.current?.buyBonus();
+  };
+
+  const toggleBonusAutoSpin = () => {
+    controllerRef.current?.toggleBonusAutoSpin();
+  };
+
+  const toggleBaseAutoSpin = () => {
+    controllerRef.current?.toggleBaseAutoSpin();
+  };
+
   const retryInitialization = () => {
     setUiState(initialState);
     setInitializationAttempt((attempt) => attempt + 1);
@@ -234,6 +254,9 @@ export function useSlotGame(isGameStarted = true) {
     activateAudio,
     decreaseBet,
     increaseBet,
+    buyBonus,
+    toggleBonusAutoSpin,
+    toggleBaseAutoSpin,
     retryInitialization,
     uiState,
   };

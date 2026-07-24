@@ -3,8 +3,9 @@ import { Assets, type Application, type Texture } from 'pixi.js';
 import { SoundManager } from '../audio/SoundManager';
 import { SLOT_CONFIG } from '../config/slotConfig';
 import { LayoutManager } from '../layout/LayoutManager';
+import { BonusModel } from '../models/BonusModel';
 import { SlotModel } from '../models/SlotModel';
-import type { SlotAssets, SlotUiState, SpineAnimationSet, SpineSymbolAsset, SymbolDefinition } from '../types/slot';
+import type { GameMode, SlotAssets, SlotUiState, SpineAnimationSet, SpineSymbolAsset, SymbolDefinition } from '../types/slot';
 import { SlotView } from '../views/SlotView';
 
 type StateListener = (state: SlotUiState) => void;
@@ -36,6 +37,7 @@ export class SlotController {
   }
 
   private readonly model = new SlotModel();
+  private readonly bonusModel = new BonusModel();
   private readonly layoutManager: LayoutManager;
   private readonly view: SlotView;
   private readonly sounds = new SoundManager();
@@ -45,12 +47,20 @@ export class SlotController {
 
   private isSpinning = false;
   private isFinishingSpin = false;
+  private isTransitioning = false;
+  private gameMode: GameMode = 'base';
+  private isBaseAutoSpin = false;
+  private isBonusAutoSpin = false;
+  private isBigWinVisible = false;
+  private bigWinAmount = 0;
   private isReady = false;
   private balance: number = SLOT_CONFIG.initialBalance;
   private bet: number = SLOT_CONFIG.bet;
   private displayedWin = 0;
   private pendingResolve?: () => void;
   private idleAnimationTimer: ReturnType<typeof setTimeout> | null = null;
+  private bonusAutoSpinTimer: ReturnType<typeof setTimeout> | null = null;
+  private baseAutoSpinTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly app: Application;
   private readonly assets: SlotAssets;
   private readonly onStateChange: StateListener;
@@ -86,6 +96,8 @@ export class SlotController {
 
   destroy() {
     this.clearIdleAnimationTimer();
+    this.clearBonusAutoSpinTimer();
+    this.clearBaseAutoSpinTimer();
     this.app.ticker.remove(this.tickerHandler);
     this.app.stage.removeChild(this.view.root);
     this.view.destroy();
@@ -95,14 +107,22 @@ export class SlotController {
   getUiState(): SlotUiState {
     return {
       balance: this.balance,
-      bet: this.bet,
+      bet: this.gameMode === 'bonus' ? SLOT_CONFIG.bonus.bet : this.bet,
       totalWin: this.displayedWin,
-      isSpinning: this.isSpinning,
+      isSpinning: this.isSpinning || this.isTransitioning,
       isReady: this.isReady,
       loadingProgress: this.loadingProgress,
       loadingError: null,
       statusMessage: this.statusMessage,
       layout: this.view.getLayout(),
+      gameMode: this.gameMode,
+      bonusSpinsRemaining: this.bonusModel.getSpinsRemaining(),
+      bonusTotalWin: this.bonusModel.getTotalWin(),
+      isBaseAutoSpin: this.isBaseAutoSpin,
+      isBonusAutoSpin: this.isBonusAutoSpin,
+      isBigWinVisible: this.isBigWinVisible,
+      bigWinAmount: this.bigWinAmount,
+      bonusBuyCost: SLOT_CONFIG.bonus.buyCost,
     };
   }
 
@@ -145,7 +165,12 @@ export class SlotController {
   }
 
   async spin(): Promise<void> {
-    if (this.isSpinning || !this.isReady || this.balance < this.bet) {
+    if (this.gameMode === 'bonus') {
+      await this.spinBonus();
+      return;
+    }
+
+    if (this.isSpinning || this.isTransitioning || !this.isReady || this.balance < this.bet) {
       return;
     }
 
@@ -174,6 +199,81 @@ export class SlotController {
 
   increaseBet() {
     this.changeBetBy(1);
+  }
+
+  async buyBonus() {
+    if (
+      !this.isReady ||
+      this.gameMode !== 'base' ||
+      this.isSpinning ||
+      this.isTransitioning ||
+      this.balance < SLOT_CONFIG.bonus.buyCost
+    ) {
+      return;
+    }
+
+    this.clearBonusAutoSpinTimer();
+    this.clearBaseAutoSpinTimer();
+    this.isBaseAutoSpin = false;
+    this.balance -= SLOT_CONFIG.bonus.buyCost;
+    this.displayedWin = 0;
+    this.isBonusAutoSpin = false;
+    this.gameMode = 'bonus';
+    this.isTransitioning = true;
+    this.bonusModel.start();
+    this.sounds.playSpinButton();
+    this.sounds.startBonus();
+    this.emitState();
+
+    await this.view.enterBonus(this.bonusModel.getGrids());
+
+    this.isTransitioning = false;
+    this.emitState();
+  }
+
+  toggleBonusAutoSpin() {
+    if (
+      this.gameMode !== 'bonus' ||
+      this.isTransitioning ||
+      this.bonusModel.getSpinsRemaining() <= 0
+    ) {
+      return;
+    }
+
+    this.isBonusAutoSpin = !this.isBonusAutoSpin;
+
+    if (!this.isBonusAutoSpin) {
+      this.clearBonusAutoSpinTimer();
+    }
+
+    this.emitState();
+
+    if (this.isBonusAutoSpin && !this.isSpinning) {
+      void this.spinBonus();
+    }
+  }
+
+  toggleBaseAutoSpin() {
+    if (
+      this.gameMode !== 'base' ||
+      this.isTransitioning ||
+      !this.isReady ||
+      this.balance < this.bet
+    ) {
+      return;
+    }
+
+    this.isBaseAutoSpin = !this.isBaseAutoSpin;
+
+    if (!this.isBaseAutoSpin) {
+      this.clearBaseAutoSpinTimer();
+    }
+
+    this.emitState();
+
+    if (this.isBaseAutoSpin && !this.isSpinning) {
+      void this.spin();
+    }
   }
 
   activateAudio() {
@@ -213,6 +313,10 @@ export class SlotController {
       this.sounds.stopSpin();
     }
 
+    if (totalWin > this.bet * SLOT_CONFIG.bigWin.thresholdMultiplier) {
+      await this.showBigWin(totalWin);
+    }
+
     this.isSpinning = false;
     this.isFinishingSpin = false;
     this.idleAnimationTimer = setTimeout(() => {
@@ -222,6 +326,106 @@ export class SlotController {
     this.emitState();
     this.pendingResolve?.();
     this.pendingResolve = undefined;
+
+    if (this.isBaseAutoSpin && this.balance >= this.bet) {
+      this.scheduleBaseAutoSpin();
+    } else if (this.balance < this.bet) {
+      this.isBaseAutoSpin = false;
+      this.emitState();
+    }
+  }
+
+  private async spinBonus(): Promise<void> {
+    if (
+      this.gameMode !== 'bonus' ||
+      this.isSpinning ||
+      this.isTransitioning ||
+      !this.isReady
+    ) {
+      return;
+    }
+
+    const result = this.bonusModel.spin();
+
+    if (!result) {
+      return;
+    }
+
+    this.isSpinning = true;
+    this.sounds.playSpinButton();
+    this.sounds.startSpin();
+    this.view.startBonusSpin(result.machineResults.map((machineResult) => machineResult.grid));
+    this.emitState();
+
+    await new Promise<void>((resolve) => {
+      this.pendingResolve = resolve;
+    });
+  }
+
+  private async finishBonusSpin() {
+    this.isFinishingSpin = true;
+    const result = this.bonusModel.getLastResult();
+    const machineResults = result?.machineResults ?? [];
+    const hasWinningLines = machineResults.some((machineResult) => machineResult.winningLines.length > 0);
+
+    this.sounds.stopSpin();
+    this.bonusModel.settleLastResult();
+
+    if (hasWinningLines) {
+      this.view.showBonusWinningLines(machineResults);
+      this.sounds.playWin();
+    }
+
+    this.emitState();
+
+    if (hasWinningLines) {
+      await this.wait(SLOT_CONFIG.bonus.lineDisplaySeconds * 1000);
+      const cascadeGrids = this.bonusModel.cascadeWinningLines(machineResults);
+
+      this.sounds.startSpin();
+      await this.view.playBonusCascade(machineResults, cascadeGrids);
+      this.sounds.stopSpin();
+    }
+
+    this.isSpinning = false;
+    this.view.setBonusIdleAnimationsEnabled(true);
+    this.emitState();
+    this.pendingResolve?.();
+    this.pendingResolve = undefined;
+
+    if (this.bonusModel.getSpinsRemaining() <= 0) {
+      await this.wait(SLOT_CONFIG.bonus.resultDisplayMs);
+      await this.completeBonus();
+      this.isFinishingSpin = false;
+      return;
+    }
+
+    this.isFinishingSpin = false;
+
+    if (this.isBonusAutoSpin) {
+      this.scheduleBonusAutoSpin();
+    }
+  }
+
+  private async completeBonus() {
+    this.clearBonusAutoSpinTimer();
+    this.isBonusAutoSpin = false;
+    this.isTransitioning = true;
+    this.emitState();
+
+    const totalWin = this.bonusModel.getTotalWin();
+
+    this.sounds.playWin();
+    await this.showBigWin(totalWin);
+    this.sounds.startBackground();
+
+    await this.view.exitBonus();
+
+    this.balance += totalWin;
+    this.displayedWin = totalWin;
+    this.gameMode = 'base';
+    this.isTransitioning = false;
+    this.emitState();
   }
 
   private clearIdleAnimationTimer() {
@@ -234,7 +438,7 @@ export class SlotController {
   }
 
   private changeBetBy(direction: -1 | 1) {
-    if (this.isSpinning) {
+    if (this.isSpinning || this.isTransitioning || this.gameMode !== 'base') {
       return;
     }
 
@@ -255,15 +459,82 @@ export class SlotController {
   private update(deltaSeconds: number) {
     this.view.update(deltaSeconds);
 
-    if (this.isSpinning && !this.isFinishingSpin && !this.view.isSpinAnimating()) {
-      void this.finishSpin();
+    if (!this.isSpinning || this.isFinishingSpin) {
+      return;
     }
+
+    const isAnimating = this.gameMode === 'bonus'
+      ? this.view.isBonusSpinAnimating()
+      : this.view.isSpinAnimating();
+
+    if (!isAnimating) {
+      void (this.gameMode === 'bonus' ? this.finishBonusSpin() : this.finishSpin());
+    }
+  }
+
+  private scheduleBonusAutoSpin() {
+    this.clearBonusAutoSpinTimer();
+    this.bonusAutoSpinTimer = setTimeout(() => {
+      this.bonusAutoSpinTimer = null;
+      void this.spinBonus();
+    }, SLOT_CONFIG.bonus.autoSpinDelayMs);
+  }
+
+  private scheduleBaseAutoSpin() {
+    this.clearBaseAutoSpinTimer();
+    this.baseAutoSpinTimer = setTimeout(() => {
+      this.baseAutoSpinTimer = null;
+      void this.spin();
+    }, SLOT_CONFIG.spin.autoSpinDelayMs);
+  }
+
+  private clearBonusAutoSpinTimer() {
+    if (this.bonusAutoSpinTimer === null) {
+      return;
+    }
+
+    clearTimeout(this.bonusAutoSpinTimer);
+    this.bonusAutoSpinTimer = null;
+  }
+
+  private clearBaseAutoSpinTimer() {
+    if (this.baseAutoSpinTimer === null) {
+      return;
+    }
+
+    clearTimeout(this.baseAutoSpinTimer);
+    this.baseAutoSpinTimer = null;
   }
 
   private wait(milliseconds: number) {
     return new Promise<void>((resolve) => {
       setTimeout(resolve, milliseconds);
     });
+  }
+
+  private async showBigWin(amount: number) {
+    this.bigWinAmount = amount;
+    this.isBigWinVisible = true;
+    this.emitState();
+
+    try {
+      await this.wait(this.getBigWinPresentationDurationMs());
+    } finally {
+      this.isBigWinVisible = false;
+      this.emitState();
+    }
+  }
+
+  private getBigWinPresentationDurationMs() {
+    const animation = SLOT_CONFIG.bigWin;
+    const pulseDuration = animation.pulseDuration * (animation.pulseRepeats + 1);
+
+    return (
+      animation.enterDuration +
+      pulseDuration +
+      animation.holdDuration +
+      animation.exitDuration
+    ) * 1000;
   }
 
   private static extractAnimations(animationNames: string[]): SpineAnimationSet {

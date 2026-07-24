@@ -1,6 +1,7 @@
 import { gsap } from 'gsap';
 import { SetupPoseBoundsProvider, Spine } from '@esotericsoftware/spine-pixi-v8';
 import { Container, Graphics, Rectangle, Sprite, Texture, type Renderer } from 'pixi.js';
+import { SLOT_CONFIG } from '../config/slotConfig';
 import type { SpineAnimationSet, SpineSymbolAsset, SymbolKey } from '../types/slot';
 
 const SYMBOL_CENTER_Y_OFFSET_RATIO = -0.018;
@@ -23,7 +24,6 @@ export class SymbolView extends Container {
   private isIdleAnimationEnabled = false;
   private isPlayingSpineAnimation = false;
   private readonly symbolAssets: Partial<Record<SymbolKey, SpineSymbolAsset>>;
-  private pulseTween: gsap.core.Timeline | null = null;
   private spinTransitionTween: gsap.core.Tween | null = null;
 
   constructor(
@@ -65,36 +65,14 @@ export class SymbolView extends Container {
   }
 
   setHighlighted(isHighlighted: boolean) {
-    this.pulseTween?.kill();
-    this.pulseTween = null;
-
     if (!isHighlighted) {
       this.highlight.alpha = 0;
-      this.scale.set(1);
       this.playIdleAnimation();
       return;
     }
 
     this.playAnimation(this.currentAnimations?.win, false);
-    this.highlight.alpha = 0.2;
-
-    this.pulseTween = gsap.timeline({ repeat: -1, yoyo: true });
-    this.pulseTween
-      .to(this.scale, {
-        x: 1.035,
-        y: 1.035,
-        duration: 0.32,
-        ease: 'sine.inOut',
-      })
-      .to(
-        this.highlight,
-        {
-          alpha: 0.72,
-          duration: 0.32,
-          ease: 'sine.inOut',
-        },
-        0,
-      );
+    this.highlight.alpha = 0.72;
   }
 
   setSymbol(symbolKey: SymbolKey) {
@@ -129,6 +107,10 @@ export class SymbolView extends Container {
     });
   }
 
+  preloadLiveSymbol(symbolKey: SymbolKey) {
+    this.getOrCreateSpine(symbolKey);
+  }
+
   setSpinning(isSpinning: boolean) {
     this.isSpinning = isSpinning;
 
@@ -143,12 +125,13 @@ export class SymbolView extends Container {
       return;
     }
 
+    if (!this.currentSymbolKey) {
+      return;
+    }
+
     this.spinSprite.visible = false;
     this.spinSprite.alpha = 1;
-
-    if (this.currentSymbolKey) {
-      this.showLiveSpine(this.currentSymbolKey);
-    }
+    this.showLiveSpine(this.currentSymbolKey);
   }
 
   update(deltaSeconds: number) {
@@ -164,9 +147,7 @@ export class SymbolView extends Container {
   }
 
   override destroy(options?: Parameters<Container['destroy']>[0]) {
-    this.pulseTween?.kill();
     this.spinTransitionTween?.kill();
-    gsap.killTweensOf(this.scale);
     gsap.killTweensOf(this.highlight);
     gsap.killTweensOf(this.spinSprite);
     this.spineCache.clear();
@@ -198,6 +179,7 @@ export class SymbolView extends Container {
     this.currentSpine = spine;
     this.currentAnimations = symbolAsset.animations;
     this.currentSpine.visible = true;
+    this.currentSpine.alpha = 1;
     this.spinSprite.visible = false;
     this.playIdleAnimation();
   }
@@ -224,7 +206,7 @@ export class SymbolView extends Container {
     this.spinSprite.alpha = 0;
     this.spinTransitionTween = gsap.to(this.spinSprite, {
       alpha: 1,
-      duration: 0.08,
+      duration: SLOT_CONFIG.symbolRendering.spinTransitionDuration,
       ease: 'sine.out',
       onComplete: () => {
         if (this.currentSpine) {

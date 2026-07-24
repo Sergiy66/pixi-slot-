@@ -226,10 +226,10 @@ const paylines: readonly Payline[] = [
 
 const paytable: Readonly<Record<SymbolKey, number>> = {
   emu: 2,
-  seaTurtle: 4,
-  cockatoo: 6,
-  platypus: 8,
-  wombat: 10,
+  seaTurtle: 6,
+  cockatoo: 8,
+  platypus: 3,
+  wombat: 4,
 };
 
 export const SLOT_CONFIG = {
@@ -237,9 +237,9 @@ export const SLOT_CONFIG = {
   designHeight: 1080,
   reels: 5,
   rows: 3,
-  initialBalance: 1000,
+  initialBalance: 10000,
   bet: 10,
-  betOptions: [10, 20, 50, 100, 200, 500],
+  betOptions: [10, 20, 50, 100, 200, 500, 1000],
   backgroundUrl,
   logoUrl,
   slotGridUrl,
@@ -253,6 +253,11 @@ export const SLOT_CONFIG = {
     reelDelay: 0.18,
     cycles: 8,
     stopDuration: 0.42,
+    autoSpinDelayMs: 650,
+  },
+  symbolRendering: {
+    spinePreloadsPerFrame: 2,
+    spinTransitionDuration: 0.08,
   },
   cascade: {
     vanishDuration: 0.18,
@@ -261,6 +266,34 @@ export const SLOT_CONFIG = {
     fallDuration: 0.36,
     scaleIn: 0.92,
     scaleDuration: 0.28,
+  },
+  bigWin: {
+    thresholdMultiplier: 10,
+    maxWidthRatio: 0.92,
+    maxHeightRatio: 0.88,
+    amountOffsetYRatio: 0.14,
+    pulseScale: 1.045,
+    enterDuration: 0.35,
+    pulseDuration: 0.3,
+    pulseRepeats: 3,
+    holdDuration: 0.75,
+    exitDuration: 0.28,
+  },
+  bonus: {
+    buyCost: 10000,
+    freeSpins: 7,
+    machines: 3,
+    bet: 500,
+    spinDuration: 1.25,
+    autoSpinDelayMs: 650,
+    lineDisplaySeconds: 1.4,
+    resultDisplayMs: 500,
+    transitionDuration: 0.5,
+    desktopGap: 28,
+    mobileGap: 12,
+    desktopWidthRatio: 0.94,
+    mobileWidthRatio: 0.96,
+    mobileHeightRatio: 0.94,
   },
   ui: {
     mobileBreakpoint: 480,

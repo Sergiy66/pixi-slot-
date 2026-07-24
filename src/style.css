@@ -46,8 +46,14 @@ select {
 .game-canvas {
   position: absolute;
   inset: 0;
+  z-index: 0;
   width: 100%;
   height: 100%;
+  pointer-events: none;
+}
+
+.game-canvas[data-overlay-visible='true'] {
+  z-index: 0;
 }
 
 .game-canvas[data-visible='false'] {
@@ -154,11 +160,81 @@ select {
   position: absolute;
   inset-inline: 0;
   bottom: 0;
-  z-index: 10;
+  z-index: 30;
   padding:
     0 clamp(16px, 3vw, 32px)
     calc(env(safe-area-inset-bottom, 0px) + clamp(16px, 2vw, 28px));
   pointer-events: none;
+}
+
+.big-win-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.big-win-overlay[data-visible='true'] {
+  visibility: visible;
+  opacity: 1;
+}
+
+.big-win-overlay__content {
+  position: relative;
+  width: min(var(--big-win-max-width), var(--big-win-max-height-width));
+  aspect-ratio: 3 / 2;
+  animation: big-win-pulse var(--big-win-pulse-duration) ease-in-out infinite alternate;
+  animation-play-state: paused;
+}
+
+.big-win-overlay[data-visible='true'] .big-win-overlay__content {
+  animation-play-state: running;
+}
+
+.big-win-overlay__image {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  opacity: 1;
+  visibility: visible;
+}
+
+.big-win-overlay__amount {
+  position: absolute;
+  z-index: 1;
+  top: var(--big-win-amount-top);
+  left: 50%;
+  width: 72%;
+  translate: -50% -50%;
+  color: #ffe59a;
+  font-family: Arial, sans-serif;
+  font-size: clamp(34px, 7.4vw, 116px);
+  font-weight: 900;
+  line-height: 1;
+  text-align: center;
+  text-shadow:
+    -3px -3px 0 #4a1705,
+    3px -3px 0 #4a1705,
+    -3px 3px 0 #4a1705,
+    3px 3px 0 #4a1705;
+}
+
+@keyframes big-win-pulse {
+  from {
+    scale: 1;
+  }
+
+  to {
+    scale: var(--big-win-pulse-scale);
+  }
 }
 
 .game-ui__panel {
@@ -170,8 +246,24 @@ select {
 }
 
 .game-ui[data-layout-mode='desktop'] .game-ui__panel {
-  grid-template-columns: repeat(3, minmax(0, 1fr)) minmax(200px, 240px);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   align-items: stretch;
+}
+
+.game-ui[data-game-mode='bonus'] .game-ui__panel {
+  width: min(920px, 100%);
+}
+
+.game-ui[data-layout-mode='desktop'][data-game-mode='bonus'] .game-ui__panel {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+
+.game-ui[data-layout-mode='desktop'][data-game-mode='bonus'] .ui-chip {
+  grid-column: span 2;
+}
+
+.game-ui[data-layout-mode='desktop'][data-game-mode='bonus'] .spin-button {
+  grid-column: span 3;
 }
 
 .game-ui[data-layout-mode='mobile'] .game-ui__panel {
@@ -210,13 +302,15 @@ select {
 
 .bet-control {
   display: grid;
-  grid-template-columns: 42px minmax(84px, 1fr) 42px;
+  grid-template-columns: 42px minmax(0, 1fr) 42px;
   align-items: center;
-  gap: 10px;
+  gap: 6px;
+  width: 100%;
 }
 
 .bet-control .ui-chip__value {
   text-align: center;
+  line-height: 42px;
 }
 
 .bet-control__button {
@@ -230,6 +324,7 @@ select {
   font-size: 24px;
   font-weight: 800;
   line-height: 1;
+  padding: 0;
   cursor: pointer;
   background: rgba(255, 216, 116, 0.14);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16);
@@ -289,9 +384,19 @@ select {
   cursor: not-allowed;
 }
 
+.bonus-buy-button {
+  background: linear-gradient(180deg, #e8b4ff 0%, #a852cf 52%, #67207f 100%);
+  color: #fff8dd;
+}
+
+.auto-spin-button[data-active='true'] {
+  background: linear-gradient(180deg, #a7f3d0 0%, #34d399 52%, #047857 100%);
+  color: #062b20;
+}
+
 @media (max-width: 1120px) {
   .game-ui[data-layout-mode='desktop'] .game-ui__panel {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 
@@ -307,6 +412,10 @@ select {
     margin: 0;
     gap: 8px;
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .game-ui[data-layout-mode='mobile'][data-game-mode='bonus'] .ui-chip--bonus-total {
+    grid-column: 1 / -1;
   }
 
   .ui-chip {
@@ -325,8 +434,8 @@ select {
   }
 
   .bet-control {
-    grid-template-columns: 36px minmax(70px, 1fr) 36px;
-    gap: 8px;
+    grid-template-columns: 36px minmax(0, 1fr) 36px;
+    gap: 6px;
   }
 
   .bet-control__button {
@@ -334,6 +443,10 @@ select {
     height: 36px;
     border-radius: 10px;
     font-size: 21px;
+  }
+
+  .bet-control .ui-chip__value {
+    line-height: 36px;
   }
 
   .spin-button {
@@ -366,7 +479,7 @@ select {
   }
 
   .bet-control {
-    grid-template-columns: 32px minmax(62px, 1fr) 32px;
+    grid-template-columns: 32px minmax(0, 1fr) 32px;
     gap: 6px;
   }
 
@@ -374,6 +487,10 @@ select {
     width: 32px;
     height: 32px;
     font-size: 19px;
+  }
+
+  .bet-control .ui-chip__value {
+    line-height: 32px;
   }
 
   .spin-button {

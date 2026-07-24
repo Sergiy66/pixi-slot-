@@ -1,9 +1,10 @@
 import { gsap } from 'gsap';
 import { Container, Graphics, Sprite, type PointData, type Renderer } from 'pixi.js';
 import { SLOT_CONFIG } from '../config/slotConfig';
-import type { SlotAssets, SlotGrid, SlotLayoutMetrics, SpineSymbolAsset, SymbolKey, WinningLine } from '../types/slot';
+import type { SlotAssets, SlotGrid, SlotLayoutMetrics, SpineSymbolAsset, SpinResult, SymbolKey, WinningLine } from '../types/slot';
 import { pickRandomSymbol } from '../utils/random';
 import { BackgroundView } from './BackgroundView';
+import { BonusView } from './BonusView';
 import { ReelView } from './ReelView';
 import { SlotGridView } from './SlotGridView';
 import { SymbolView } from './SymbolView';
@@ -28,9 +29,11 @@ export class SlotView {
 
   private layout: SlotLayoutMetrics;
   private previewSymbolView: SymbolView | null = null;
+  private bonusView: BonusView | null = null;
   private reelsEnabled = false;
   private winPresentationTime = 0;
   private linePulseTween: gsap.core.Tween | null = null;
+  private transitionTimeline: gsap.core.Timeline | null = null;
 
   constructor(assets: SlotAssets, initialLayout: SlotLayoutMetrics, renderer: Renderer) {
     this.assets = assets;
@@ -48,6 +51,7 @@ export class SlotView {
     this.gridLayer.addChild(this.slotGridView.root);
     this.winLayer.addChild(this.lineOverlay);
     this.contentRoot.addChild(this.logoLayer, this.gridLayer, this.symbolsLayer, this.winLayer);
+    this.root.sortableChildren = true;
     this.root.addChild(this.backgroundLayer, this.contentRoot);
 
     this.applyStaticLayout();
@@ -58,6 +62,7 @@ export class SlotView {
     this.layout = layout;
     this.backgroundView.resize(layout.backgroundRect);
     this.layoutLogo();
+    this.bonusView?.resize(layout);
     this.contentRoot.position.set(layout.rootOffset.x, layout.rootOffset.y);
     this.contentRoot.scale.set(layout.rootScale);
   }
@@ -73,6 +78,8 @@ export class SlotView {
 
   destroy() {
     this.linePulseTween?.kill();
+    this.transitionTimeline?.kill();
+    this.bonusView?.dispose();
     this.root.destroy({ children: true });
   }
 
@@ -82,6 +89,10 @@ export class SlotView {
 
   isSpinAnimating() {
     return this.reels.some((reel) => reel.isAnimating());
+  }
+
+  isBonusSpinAnimating() {
+    return this.bonusView?.isAnimating() ?? false;
   }
 
   setGrid(grid: SlotGrid) {
@@ -123,7 +134,117 @@ export class SlotView {
     this.previewSymbolView?.destroy({ children: true });
     this.previewSymbolView = null;
     this.createReels();
+    this.bonusView = new BonusView(
+      this.renderer,
+      this.assets.slotGrid,
+      this.assets.symbols as Record<SymbolKey, SpineSymbolAsset>,
+      this.layout,
+    );
+    this.root.addChild(this.bonusView.root);
     this.reelsEnabled = true;
+  }
+
+  enterBonus(grids: SlotGrid[]): Promise<void> {
+    const bonusView = this.bonusView;
+
+    if (!bonusView) {
+      return Promise.resolve();
+    }
+
+    this.transitionTimeline?.kill();
+    this.clearWinPresentation();
+    this.setIdleAnimationsEnabled(false);
+    bonusView.setGrids(grids);
+    bonusView.root.visible = true;
+    bonusView.root.alpha = 0;
+    this.contentRoot.visible = true;
+    this.contentRoot.alpha = 1;
+
+    return new Promise((resolve) => {
+      this.transitionTimeline = gsap
+        .timeline({
+          onComplete: () => {
+            this.contentRoot.visible = false;
+            bonusView.setIdleAnimationsEnabled(true);
+            this.transitionTimeline = null;
+            resolve();
+          },
+        })
+        .to(this.contentRoot, {
+          alpha: 0,
+          duration: SLOT_CONFIG.bonus.transitionDuration,
+          ease: 'sine.inOut',
+        })
+        .to(
+          bonusView.root,
+          {
+            alpha: 1,
+            duration: SLOT_CONFIG.bonus.transitionDuration,
+            ease: 'sine.inOut',
+          },
+          '<',
+        );
+    });
+  }
+
+  exitBonus(): Promise<void> {
+    const bonusView = this.bonusView;
+
+    if (!bonusView) {
+      return Promise.resolve();
+    }
+
+    this.transitionTimeline?.kill();
+    this.contentRoot.visible = true;
+    this.contentRoot.alpha = 0;
+
+    return new Promise((resolve) => {
+      this.transitionTimeline = gsap
+        .timeline({
+          onComplete: () => {
+            bonusView.root.visible = false;
+            bonusView.setIdleAnimationsEnabled(false);
+
+            this.setIdleAnimationsEnabled(true);
+            this.transitionTimeline = null;
+            resolve();
+          },
+        })
+        .to(bonusView.root, {
+          alpha: 0,
+          duration: SLOT_CONFIG.bonus.transitionDuration,
+          ease: 'sine.inOut',
+        })
+        .to(
+          this.contentRoot,
+          {
+            alpha: 1,
+            duration: SLOT_CONFIG.bonus.transitionDuration,
+            ease: 'sine.inOut',
+          },
+          '<',
+        );
+    });
+  }
+
+  startBonusSpin(grids: SlotGrid[]) {
+    this.bonusView?.clearWinPresentation();
+    this.bonusView?.startSpin(grids);
+  }
+
+  showBonusWinningLines(machineResults: readonly SpinResult[]) {
+    this.bonusView?.showWinningLines(machineResults);
+  }
+
+  playBonusCascade(
+    machineResults: readonly SpinResult[],
+    grids: SlotGrid[],
+  ) {
+    return this.bonusView?.playCascade(machineResults, grids) ?? Promise.resolve();
+  }
+
+  setBonusIdleAnimationsEnabled(isEnabled: boolean) {
+    this.bonusView?.setIdleAnimationsEnabled(isEnabled);
   }
 
   showWinningLines(winningLines: WinningLine[]) {
@@ -183,8 +304,14 @@ export class SlotView {
   }
 
   update(deltaSeconds: number) {
-    this.previewSymbolView?.update(deltaSeconds);
-    this.reels.forEach((reel) => reel.update(deltaSeconds));
+    if (this.contentRoot.visible) {
+      this.previewSymbolView?.update(deltaSeconds);
+      this.reels.forEach((reel) => reel.update(deltaSeconds));
+    }
+
+    if (this.bonusView?.root.visible) {
+      this.bonusView.update(deltaSeconds);
+    }
 
     if (this.winPresentationTime <= 0) {
       return;

@@ -100,6 +100,12 @@ export interface SpineSymbolAsset {
 
 export type ReelColumn = SymbolKey[];
 export type SlotGrid = ReelColumn[];
+export type GameMode = 'base' | 'bonus';
+
+export interface BonusSpinResult {
+  machineResults: SpinResult[];
+  totalWin: number;
+}
 
 export interface Payline {
   id: string;
@@ -140,4 +146,12 @@ export interface SlotUiState {
   loadingError: string | null;
   statusMessage: string;
   layout: SlotLayoutMetrics | null;
+  gameMode: GameMode;
+  bonusSpinsRemaining: number;
+  bonusTotalWin: number;
+  isBaseAutoSpin: boolean;
+  isBonusAutoSpin: boolean;
+  isBigWinVisible: boolean;
+  bigWinAmount: number;
+  bonusBuyCost: number;
 }
